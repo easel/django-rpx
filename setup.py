@@ -63,14 +63,12 @@ for dirpath, dirnames, filenames in os.walk(extensions_dir):
     elif filenames:
         data_files.append([dirpath, [os.path.join(dirpath, f) for f in filenames]])
 
-
-
 setup(
     name         = 'django_rpx',
     description  = 'djago_rpx is a library that allows people to use the rpxnow.com service in django',
-    author       = 'howthebodyworks',
+    author       = 'howthebodyworks, mikexstudios, voidfiles',
     author_email = 'none@none.com',
-    url          = 'http://github.com/mikexstudios/django_rpx/tree/master',
+    url          = 'http://github.com/howthebodyworks/django_rpx/tree/master',
     version      = '.2',
     platforms = ['any'],
     packages = packages,
