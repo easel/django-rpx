@@ -30,10 +30,10 @@ INSTALLATION:
     the destination of the link in your provided rpxnow snippet, your realm
     is "possumpalace-blog".
   * You will also need to add rpx to your authentication providers list
-  AUTHENTICATION_BACKENDS = (
-    'rpx.backends.RpxBackend',
-    'django.contrib.auth.backends.ModelBackend',
-  )
+        AUTHENTICATION_BACKENDS = (
+          'rpx.backends.RpxBackend',
+          'django.contrib.auth.backends.ModelBackend',
+        )
   * You might want to include the rpx template tags in your site code
     somewhere to provide a login link. Their embedded iframe version is not
     yet templated up, but the popup/link-out version is provided.
