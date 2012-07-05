@@ -1,42 +1,47 @@
 from django.http import HttpResponseRedirect, HttpResponseForbidden
-from django.contrib.auth import authenticate, login
+#from django.contrib.auth import authenticate, login
 from django.contrib.auth.models import User
 from django_rpx.models import RpxData
-from django.conf import settings
-from django_rpx.views import permute_name
-TRUSTED_PROVIDERS=set(getattr(settings,'RPX_TRUSTED_PROVIDERS', []))
+from django_rpx.api import RpxApi
+from django_rpx import logger, settings
+
+TRUSTED_PROVIDERS=set(settings.TRUSTED_PROVIDERS)
+
+def permute_name(name_string, num):
+        num_str=str(num)
+        max_len=29-len(num_str)
+        return ''.join([name_string[0:max_len], '-', num_str])
 
 class RpxBackend:
     def get_user(self, id):
+        """
+        get a user record via their id
+        """
         try:
             return User.objects.get(id=id)
         except User.DoesNotExist:
             return None
+
     def get_user_by_rpx_id(self, rpx_id):
+        """
+        get a user record by their RPX id
+        """
         try:
-            return User.objects.get(rpxdata__identifier=rpx_id)
-        except User.DoesNotExist:
-            return None                
+            rpx_data = RpxData.objects.get(identifier=rpx_id)
+            return rpx_data.user
+        except RpxData.DoesNotExist:
+            return None
+
     def authenticate(self, token=''):
         """
         TODO: pass in a message array here which can be filled with an error
         message with failure response
         """
-        from django.utils import simplejson
-        import urllib
-        import urllib2
-
-        url = 'https://rpxnow.com/api/v2/auth_info'
-        args = {
-          'format': 'json',
-          'apiKey': settings.RPXNOW_API_KEY,
-          'token': token
-        }
-        r = urllib2.urlopen(url=url,
-          data=urllib.urlencode(args),
-        )
-        json = simplejson.load(r)
+        logger.debug('django_rpx.backends.authenticate token = %s'  %(token, ))
+        api = RpxApi()
+        json = api.get_auth_info(token)
         if json['stat'] <> 'ok':
+            logger.debug('json results != ok -- %s' %(json['stat']))
             return None
         profile = json['profile']
         rpx_id = profile['identifier']
@@ -48,33 +53,50 @@ class RpxBackend:
         provider=profile.get("providerName")
 
         user=self.get_user_by_rpx_id(rpx_id)
-        
+        logger.debug('got user by rpx id %s' %(user, ))
+
         if not user:
-            #no match, create a new user - but there may be duplicate user names.
-            username=nickname
-            user=None
-            try:
-                i=0
-                while True:
-                    User.objects.get(username=username)
-                    username=permute_name(nickname, i)
-                    i+=1
-            except User.DoesNotExist:
-                #available name!
-                user=User.objects.create_user(username, email)
-            rpxdata=RpxData(identifier=rpx_id)
-            # Store the origonal nickname for display
-            user.first_name = nickname
-            user.save()
-            rpxdata.user=user
-            rpxdata.save()
-            
+            # no match. we can try to match on email, though, provided that doesn't steal
+            # an rpx association
+            if email and profile['providerName'] in TRUSTED_PROVIDERS:
+                #beware - this would allow account theft, so we only allow it
+                #for trusted providers
+                user_candidates=User.objects.all().filter(
+                  rpxdata=None).filter(email=email)
+                # if unambiguous, do it. otherwise, don't.
+                if user_candidates.count()==1:
+                    [user]=user_candidates
+                    rpxdata=RpxData(identifier=rpx_id)
+                else:
+                    return None
+            else:
+                #no match, create a new user - but there may be duplicate user names.
+                logger.debug('backends.authenticate -- creating new user')
+                username=nickname
+                user=None
+                try:
+                    i=0
+                    while True:
+                        User.objects.get(username=username)
+                        username=permute_name(nickname, i)
+                        i+=1
+                except User.DoesNotExist:
+                    #available name!
+                    user=User.objects.create_user(username, email)
+                rpxdata = RpxData(identifier=rpx_id)
+                rpxdata.user=user
+                try:
+                    rpxdata.save()
+                except:
+                    # the object already exists
+                    return False
+        rpxdata = RpxData.objects.get(identifier=rpx_id)
+        api.save_data(json, rpxdata, user)
         if profile_pic_url:
-            user.rpxdata.profile_pic_url=profile_pic_url
+            rpxdata.profile_pic_url=profile_pic_url
         if info_page_url:
-            user.rpxdata.info_page_url=info_page_url
+            rpxdata.info_page_url=info_page_url
         if provider:
-            user.rpxdata.provider=provider
-        
-        user.rpxdata.save()
+            rpxdata.provider=provider
+        rpxdata.save()
         return user
